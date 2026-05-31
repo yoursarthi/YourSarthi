@@ -1,0 +1,916 @@
+================================================================================
+  ITM LMS — COMPREHENSIVE PROJECT REPORT
+  AI-Powered Learning Management System · ITM University, Gwalior
+  Report Date : 19-May-2026
+  Prepared for: Internal Review, Accreditation & Ranking Readiness Assessment
+================================================================================
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 1 — PROJECT OVERVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ITM LMS is a full-stack, AI-augmented Learning Management System built for
+ITM University, Gwalior. The platform is designed to digitise and partially
+automate the most time-intensive academic workflows: student and faculty
+management, course administration, outcome-based question banking, and — most
+distinctively — AI-powered evaluation of handwritten examination answer sheets
+using Google's Gemini 2.5 Flash multimodal model.
+
+The system is positioned as a tool that can directly support the institution's
+standing under national accreditation frameworks (NAAC, NBA) and national /
+international ranking processes (NIRF, QS).
+
+TECHNOLOGY STACK
+----------------
+  Frontend   : React 18 (Vite), Tailwind CSS, inline styles, Socket.IO client
+  Backend    : Node.js, Express.js, Socket.IO server
+  Databases  : (Primary) Flat JSON file (itm_lms_db.json) via a custom sync DB
+               (Secondary) PostgreSQL — optional, via DATABASE_URL env var
+  AI Engine  : Google Gemini 2.5 Flash (REST API called from both client and
+               server sides)
+  Auth       : Custom session-less login (email + password, no JWT/sessions)
+  Hosting    : Local / self-hosted (no cloud deployment configured)
+
+CORE MODULES
+------------
+  1.  Dashboard             — Stats overview, quick navigation
+  2.  AI Evaluation         — Single and bulk handwritten sheet grading with
+                              Gemini, per-question rubrics, sub-sections,
+                              model-answer extraction, tabulation, marksheets
+  3.  Question Bank         — CO/Bloom's tagged questions, paper generation
+  4.  Students              — CRUD management of student records
+  5.  Faculty               — CRUD management of faculty records
+  6.  Courses               — Course catalog, LMS resources, announcements
+  7.  Career Counsellor     — Hobby + CGPA-based career matching with AI chat
+  8.  Data Management       — Bulk import/export interface
+  9.  LMS                   — Course-level resources and announcements hub
+  10. Notifications         — Placeholder notification panel
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 2 — DETAILED MODULE DESCRIPTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2.1  AI EVALUATION (Core Feature)
+──────────────────────────────────
+  The centrepiece of the system. A faculty member configures an exam paper
+  (title, subject, program, semester) and defines each question with optional
+  sub-sections (a, b, c…), maximum marks, and grading rubrics. The rubrics can
+  be typed manually or auto-extracted from a scanned model answer sheet via a
+  Gemini API call that reads the images and generates mark-specific criteria.
+
+  Single Evaluation
+  · Upload scanned pages of one student's answer sheet (JPG/PNG/PDF).
+  · Gemini evaluates all questions in a single API call, returns per-question
+    marks, sub-section breakdowns, feedback, strengths, and improvements.
+  · Results are saved to PostgreSQL (when connected) and a JSON fallback store.
+  · A session roster accumulates all students evaluated in one sitting and can
+    be exported as a CSV.
+
+  Bulk Evaluation
+  · Multiple students' answer sheets are uploaded at once.
+  · Processing runs via Socket.IO with a concurrency of 3 simultaneous Gemini
+    calls to avoid API rate limits.
+  · Real-time progress is streamed to the client.
+
+  Tabulation
+  · Aggregates all student results for a saved exam paper into a class-wide
+    marks table with per-question columns.
+  · Exportable as CSV.
+
+  Marksheets
+  · Generates a print-ready, ITM University-branded marksheet with a unique
+    digital verification code for each student result.
+
+2.2  QUESTION BANK
+──────────────────
+  Faculty can add questions tagged with:
+    · Course code, Question type (MCQ / Short / Long / Numerical)
+    · Difficulty (Easy / Medium / Hard)
+    · Course Outcome (CO1–CO5)
+    · Bloom's Taxonomy level (Remember → Create)
+    · Topic / module
+
+  A paper-generation engine randomly selects questions by type and difficulty
+  to produce a question paper.
+
+2.3  STUDENT & FACULTY MANAGEMENT
+────────────────────────────────────
+  Basic CRUD for student and faculty records. Student profiles include personal
+  details, department, program, and batch. Faculty profiles include designation
+  and specialisation.
+
+2.4  CAREER COUNSELLOR
+──────────────────────
+  Students select hobbies and enter CGPA. A rule-based scoring engine matches
+  against a hardcoded list of 8 careers. An optional AI chat (Gemini) provides
+  personalised advice.
+
+2.5  DATABASE ARCHITECTURE
+──────────────────────────
+  The system runs on a dual-storage model:
+  · JSON file (itm_lms_db.json): students, faculty, courses, departments,
+    questions, legacy evaluation sessions, LMS resources/announcements.
+  · PostgreSQL: exam papers, questions, student results, question responses,
+    marksheets. Used only when DATABASE_URL is set.
+
+  The two stores are not synchronised and serve overlapping but distinct
+  purposes, creating fragmentation.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 3 — CURRENT FLAWS & TECHNICAL DEFICIENCIES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SEVERITY KEY:  [CRITICAL] = data loss / security risk
+               [HIGH]     = major functional gap
+               [MEDIUM]   = affects reliability or user experience
+               [LOW]      = polish / best-practice issue
+
+──────────────────────────────────────────
+3.1  SECURITY FLAWS
+──────────────────────────────────────────
+
+  [CRITICAL] Hardcoded plaintext credentials in db.js (seed data):
+             admin@itmuniversity.ac.in / admin123
+             faculty@itmuniversity.ac.in / faculty123
+             student@itmuniversity.ac.in / student123
+             All passwords stored as plaintext strings. No bcrypt or any
+             hashing is applied anywhere in the auth flow.
+
+  [CRITICAL] No authentication middleware on any API route. Every Express
+             endpoint (/api/students, /api/evaluations, etc.) is fully public.
+             Anyone who can reach the server port can read, write, or delete
+             all institutional data without logging in.
+
+  [CRITICAL] Gemini API key stored in localStorage (client-side). It is
+             visible in browser DevTools under Application → Local Storage and
+             transmitted in every Gemini network request visible in the Network
+             tab. Any XSS vulnerability or malicious browser extension can
+             exfiltrate it.
+
+  [HIGH]     CORS set to origin: '*' — any website can make authenticated
+             requests to the API from a user's browser.
+
+  [HIGH]     API calls to Gemini are made directly from the browser (frontend
+             fetch), meaning the API key travels in plaintext in HTTP request
+             headers visible to anyone on the same network.
+
+  [MEDIUM]   No CSRF protection on mutating POST/PUT/DELETE endpoints.
+
+  [MEDIUM]   No rate limiting on any endpoint. The Gemini proxy endpoint and
+             auth route are open to brute-force attacks.
+
+──────────────────────────────────────────
+3.2  DATABASE & DATA INTEGRITY FLAWS
+──────────────────────────────────────────
+
+  [CRITICAL] The JSON file database (itm_lms_db.json) performs synchronous
+             read-modify-write on every single operation. Under concurrent
+             requests (e.g. bulk evaluation with 3 simultaneous jobs) there is
+             a race condition that can corrupt or partially overwrite the file,
+             causing permanent data loss.
+
+  [CRITICAL] No database transactions in the JSON store. If the process crashes
+             mid-write the file can end up truncated and unparseable, destroying
+             all institutional data.
+
+  [HIGH]     Dual-store fragmentation: evaluation sessions and their results
+             are split between the JSON store (legacy eval_sessions,
+             evaluations tables) and PostgreSQL (exam_papers, student_results).
+             History tab reads from the JSON store; Tabulation and Marksheets
+             read from PostgreSQL. The two are never reconciled, so a result
+             visible in History may not appear in Tabulation and vice versa.
+
+  [HIGH]     Question IDs are generated as Q001, Q002 based on the current
+             count (db.count('questions') + 1). If questions are deleted and
+             new ones added, the counter reuses IDs, causing collisions and
+             potential data overwrites.
+
+  [HIGH]     The buildQBlock and computeGrade functions are duplicated in both
+             server/index.js and src/views/Evaluation.jsx (frontend). The
+             frontend version was updated (handling empty q.text for sub-section
+             questions) but the server copy was not. This divergence means bulk
+             evaluation sends different prompts to Gemini than single evaluation,
+             producing inconsistent results.
+
+  [MEDIUM]   No soft-delete or audit trail. Deleting a student, question, or
+             evaluation permanently removes the record with no recovery option.
+
+  [MEDIUM]   The JSON database grows unboundedly. There is no archival,
+             pagination at the storage layer, or size limit. As evaluations
+             accumulate (especially base64 image data if ever stored) the file
+             will become unacceptably large.
+
+──────────────────────────────────────────
+3.3  AI EVALUATION FLAWS
+──────────────────────────────────────────
+
+  [HIGH]     Exam paper setup (questions, rubrics, marks) is held only in React
+             state. Navigating away from the Evaluate tab or refreshing the page
+             destroys all configuration. Faculty must re-enter everything from
+             scratch each session.
+
+  [HIGH]     "Extract Questions & Rubrics" immediately overwrites all current
+             questions with no confirmation dialog. A mis-click on an already-
+             configured paper deletes all work irreversibly.
+
+  [HIGH]     The safeParseJSON recovery function silently patches truncated or
+             malformed JSON from Gemini by adding closing braces. This can
+             produce plausible-looking but incorrect marks (e.g., a truncated
+             response where the last question's marks default to 0 after
+             recovery).
+
+  [HIGH]     No retry logic for failed Gemini API calls. A transient network
+             error or rate-limit response marks the student as an error with no
+             automatic or manual retry mechanism.
+
+  [MEDIUM]   When a question has sub-sections the main question text is hidden
+             from the UI, but the validQuestions filter and buildQBlock still
+             include it in the Gemini prompt. If text was typed before sub-
+             sections were added it will persist invisibly.
+
+  [MEDIUM]   The MarksheetPrint component determines PASS/FAIL with:
+               data.grade >= 'C'
+             This is a JavaScript lexicographic string comparison, not a
+             grade-order comparison. 'F' >= 'C' evaluates to true in JS,
+             meaning a student with grade F is incorrectly shown as PASS.
+
+  [MEDIUM]   Marksheets contain hardcoded signatory names ("Prof. R.K. Sharma",
+             "Dr. S.P. Gupta") and a hardcoded academic session based on
+             current calendar year. These are not configurable and will be
+             wrong for different exam periods or signatories.
+
+  [MEDIUM]   The verification URL on marksheets points to
+             "itmuniversity.ac.in/verify" which does not exist in this system.
+             There is no actual verification endpoint, making the code
+             unverifiable and potentially misleading on an official document.
+
+  [LOW]      Tabulation CSV export uses window.open() pointing to
+             /api/exams/papers/{id}/tabulation/export, which requires the
+             server to be running and CORS to allow a direct browser GET.
+             This is fragile and bypasses the API client layer.
+
+──────────────────────────────────────────
+3.4  QUESTION BANK FLAWS
+──────────────────────────────────────────
+
+  [HIGH]     Paper generation is a random shuffle (sort(() => Math.random()-0.5))
+             with no guarantee of topic coverage, Bloom's distribution, or
+             CO attainment balance. Generated papers cannot be reproduced
+             (no seed / no saved state).
+
+  [HIGH]     No edit functionality for existing questions. A question with a
+             typo must be deleted and re-created, losing its ID reference.
+
+  [MEDIUM]   No pagination. All questions are fetched and rendered at once.
+             With hundreds of questions this will cause visible lag and memory
+             pressure.
+
+  [MEDIUM]   MCQ options can be saved empty without validation.
+
+  [LOW]      CO options are hardcoded to CO1–CO5. Different courses may have
+             different numbers of COs, and there is no way to configure this
+             per-course.
+
+──────────────────────────────────────────
+3.5  CAREER COUNSELLOR FLAWS
+──────────────────────────────────────────
+
+  [HIGH]     The scoring algorithm applies Math.random() * 10 noise to each
+             career score. Career recommendations for the same student change
+             on every assessment run, which is not acceptable for a guidance
+             tool that may influence student decisions.
+
+  [HIGH]     Only 8 careers are hardcoded. No career relevant to emerging
+             fields (Cybersecurity, Cloud Architecture, Biotech, Law, Finance,
+             Teaching) is included. The list cannot be extended without code
+             changes.
+
+  [MEDIUM]   CGPA input has no validation. Values above 10 or below 0 are
+             accepted silently, producing nonsensical results.
+
+  [MEDIUM]   The Gemini-powered chat reuses the evaluation API key from
+             localStorage. If the evaluation key is not set, the career chat
+             silently fails with no user feedback.
+
+──────────────────────────────────────────
+3.6  FRONTEND ARCHITECTURE FLAWS
+──────────────────────────────────────────
+
+  [HIGH]     Evaluation.jsx is a single file of ~1,400 lines containing at
+             least 6 distinct logical components (main evaluation, BulkEval,
+             PerQuestionResult, TabulationView, MarksheetsView, MarksheetPrint).
+             This makes the file unmaintainable and untestable.
+
+  [HIGH]     No React Router. Navigation is handled by passing an onNavigate
+             prop down through the tree. Deep links are impossible; the browser
+             back button does not work; page state is lost on any navigation.
+
+  [HIGH]     No state persistence across navigation. Switching from Evaluate
+             to Tabulation and back resets all evaluation configuration.
+
+  [MEDIUM]   Mixing of two styling systems (Tailwind CSS classes in some
+             components, fully inline styles in Evaluation.jsx). This creates
+             visual inconsistency and makes theming impossible.
+
+  [MEDIUM]   No React Error Boundaries. Any unhandled exception in a child
+             component crashes the entire application.
+
+  [LOW]      No loading skeleton or spinner for initial data fetches. Components
+             render empty silently while data loads.
+
+──────────────────────────────────────────
+3.7  GENERAL OPERATIONAL FLAWS
+──────────────────────────────────────────
+
+  [HIGH]     No environment configuration (.env.example not provided, no
+             documentation on required env vars). A new deployment has no
+             guidance on DATABASE_URL, PORT, or any Gemini config.
+
+  [HIGH]     No automated tests of any kind (unit, integration, or E2E).
+             Every regression is discovered manually in production.
+
+  [MEDIUM]   Socket.IO concurrency is hardcoded to 3. There is no way to
+             tune this for different server capacities or API rate limits.
+
+  [MEDIUM]   No logging framework. console.warn is used to swallow PostgreSQL
+             errors silently. Failed evaluations have no audit trail.
+
+  [MEDIUM]   The Notifications module is a non-functional placeholder.
+             No actual notification is generated by any system event.
+
+  [LOW]      Enrolled student count on course cards is a static field set at
+             creation time. It is never incremented when a student is added or
+             decremented when one is removed, so it is always wrong.
+
+  [LOW]      Academic session on marksheets is calculated as
+             (current year - 1) — (current year), making it incorrect for
+             exams held in the second half of the academic year (Jan–May).
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 4 — ACCREDITATION & RANKING ALIGNMENT ANALYSIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4.1  NBA (National Board of Accreditation)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NBA accreditation under Tier-I (Tier-I SAR) evaluates programs on Criteria 1–11,
+heavily weighted on Program Outcomes (POs), Course Outcomes (COs), and their
+measured attainment.
+
+  WHAT THE SYSTEM DOES WELL FOR NBA
+  · Question Bank tags every question to a Course Outcome (CO1–CO5) and
+    Bloom's Taxonomy level — essential for CO attainment computation.
+  · Per-question marks from AI evaluation can directly feed CO attainment
+    calculationsif exported and processed.
+  · Rubric-based evaluation aligns with Criterion 3 (Teaching-Learning and
+    Evaluation) requirements for structured, outcome-linked assessment.
+
+  NBA GAPS — CRITICAL
+
+  Gap 1 · CO Attainment Computation (Criterion 3, weight ~150 pts)
+    NBA requires evidence that each CO is being attained at the threshold
+    level across direct (exams) and indirect (surveys) methods.
+    Current state: The system stores per-question marks but has no module
+    to aggregate marks by CO tag, compute attainment levels, or compare
+    against target attainment thresholds. The question-to-CO mapping in the
+    Question Bank is not connected to the Evaluation module at all.
+    Required: A CO Attainment Dashboard that pulls exam results and maps
+    marks to CO tags, computes direct attainment, and flags COs below target.
+
+  Gap 2 · PO Attainment Mapping (Criterion 3)
+    NBA requires CO-to-PO mapping and PO attainment evidence.
+    Current state: There is no CO-to-PO mapping table anywhere in the system.
+    Required: A configurable CO→PO mapping module and aggregated PO attainment
+    reports per program.
+
+  Gap 3 · Continuous Internal Evaluation (CIE) Records (Criterion 3)
+    NBA requires documented evidence of multiple assessment cycles per course.
+    Current state: Exam papers are independent; there is no concept of linking
+    multiple evaluations to a single course-semester offering, computing
+    running totals, or tracking a student's performance across Assessment 1,
+    Mid-Term, and End-Term.
+    Required: Course-level assessment plan linking evaluations sequentially.
+
+  Gap 4 · Indirect Assessment / Exit Surveys (Criterion 3)
+    NBA requires indirect CO attainment from student feedback and surveys.
+    Current state: No survey or feedback module exists.
+    Required: Digital course-end survey with CO-rated questions and automated
+    indirect attainment computation.
+
+  Gap 5 · Faculty Qualification and Workload Records (Criterion 4)
+    NBA audits faculty qualification (PhD, publications) and teaching load.
+    Current state: Faculty module stores only name, designation, and
+    specialisation — no qualification details, joining date, publications,
+    or assigned courses.
+    Required: Faculty profile extension with qualifications, research output,
+    and course assignment records.
+
+  Gap 6 · Audit Trail for Evaluations (Criterion 3)
+    NBA auditors request sample evaluated answer sheets as evidence.
+    Current state: Scanned images are never stored — only the AI-generated
+    result. There is no way to retrieve or display the actual evaluated sheet.
+    Required: Option to store original scan references (file path or object
+    storage URL) alongside results for audit retrieval.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4.2  NAAC (National Assessment and Accreditation Council)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NAAC evaluates institutions across 7 Criteria totalling 1000 marks under the
+Revised Accreditation Framework (RAF). The most relevant criteria for this LMS:
+
+  Criterion 1 — Curricular Aspects (150 marks)
+    1.1 Curriculum Design & Development
+      · Positive: Course outcomes are defined and stored per course.
+      · Gap: No mapping between curriculum design and Program Specific Outcomes
+        (PSOs). No version history of curriculum revisions.
+    1.2 Academic Flexibility
+      · Gap: No elective / open elective tracking, no CBCS (Choice-Based Credit
+        System) credit mapping visible in the system.
+    1.3 Curriculum Enrichment
+      · Gap: No internship records, project records, or value-added course
+        certificates stored against student profiles.
+
+  Criterion 2 — Teaching-Learning and Evaluation (350 marks)
+    2.1 Student Enrolment and Profile
+      · Gap: Student CGPA, academic history, category (SC/ST/OBC/General/EWS),
+        and income group data are absent. NAAC requires student diversity
+        metrics and slow-learner / advanced-learner identification.
+    2.2 Catering to Student Diversity
+      · Gap: No learning style assessment, no remedial or bridge course records.
+    2.3 Teaching-Learning Process
+      · Positive: LMS module stores resources and announcements per course.
+      · Gap: No attendance module, no student engagement analytics, no ICT
+        usage tracking per class.
+    2.4 Teacher Quality
+      · Gap: Faculty module lacks research papers count, FDP (Faculty
+        Development Programme) attendance, and awards/recognition.
+    2.5 Evaluation Process and Reforms
+      · Positive: AI evaluation with rubric-based per-question grading is a
+        demonstrable reform in assessment practice. This is a strong evidence
+        point for NAAC Criterion 2.5.
+      · Gap: Grievance redressal for evaluation is absent. NAAC requires a
+        documented process for students to challenge AI or manual grading.
+    2.6 Student Performance and Learning Outcomes
+      · Gap: No pass percentage tracking by year, no dropout rate computation,
+        no cohort-level performance trend across semesters.
+
+  Criterion 3 — Research, Innovations and Extensions (120 marks)
+    · Gap: No research output module. Faculty publication tracking,
+      patent records, funded projects, and PhD supervision are absent.
+      NAAC awards significant marks for this and it is entirely missing.
+
+  Criterion 4 — Infrastructure and Learning Resources (100 marks)
+    4.1 Physical Facilities
+      · Not applicable to software.
+    4.2 Library as Learning Resource
+      · Gap: No digital library or e-resource integration.
+    4.3 IT Infrastructure
+      · Positive: The LMS and AI evaluation system itself is evidence of IT
+        infrastructure investment. However, it needs uptime records and user
+        adoption metrics to be cited in the SSR (Self-Study Report).
+    4.4 Maintenance of Campus Infrastructure
+      · Not applicable to software.
+
+  Criterion 5 — Student Support and Progression (130 marks)
+    5.1 Student Support
+      · Positive: Career Counsellor module exists and is citable as a student
+        support initiative.
+      · Gap: No scholarship / financial aid tracking, no placement cell
+        records, no alumni module.
+    5.2 Student Progression
+      · Gap: No higher education progression tracking (students who went to
+        PG programmes), no competitive exam preparation tracking.
+    5.3 Student Participation and Activities
+      · Gap: No extracurricular, club, or achievement records.
+
+  Criterion 6 — Governance, Leadership and Management (100 marks)
+    6.2 Strategy Development and Deployment
+      · Gap: No role-based access control. A student-role user has the same
+        API access as an admin-role user. NAAC requires documented governance
+        with appropriate access controls.
+    6.5 Internal Quality Assurance System
+      · Gap: No IQAC (Internal Quality Assurance Cell) dashboard, no academic
+        audit trails, no mechanism to generate AQAR (Annual Quality Assurance
+        Report) data from the system.
+
+  Criterion 7 — Institutional Values and Best Practices (50 marks)
+    7.1 Institutional Values
+      · Gap: No data on gender equity, environmental initiatives, or
+        inclusivity metrics tracked by the system.
+    7.2 Best Practices
+      · Positive: AI-based evaluation is itself a documentable Best Practice.
+      · Gap: No mechanism to formally document and publish best practices
+        from within the system.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4.3  NIRF (National Institutional Ranking Framework)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NIRF ranks institutions on 5 parameters. Data submitted to NIRF annually via
+the online portal must be consistent with institutional records.
+
+  Parameter 1 — Teaching, Learning & Resources (TLR) — 100 marks
+    · Faculty-Student Ratio (FSR): The system stores both faculty and student
+      counts, but does not compute FSR or track it over time.
+      Required: Automated FSR computation and historical tracking.
+    · Faculty with PhD: Not tracked. Required: Qualification field in faculty
+      profiles to enable automated computation.
+    · Expenditure on Academic Resources: Not tracked anywhere.
+
+  Parameter 2 — Research and Professional Practice (RRP) — 100 marks
+    · Publications, Patents, Projects, Ph.D. students: Entirely absent from
+      the system. This is one of the highest-weighted NIRF parameters.
+      Required: A dedicated Research Management module.
+
+  Parameter 3 — Graduation Outcomes (GO) — 100 marks
+    · Ph.D. / PG / UG Graduates per year: Not tracked.
+    · Placement rate and median salary: Not tracked.
+    · Higher education progression: Not tracked.
+      Required: Student graduation and placement records module.
+
+  Parameter 4 — Outreach and Inclusivity (OI) — 100 marks
+    · SC/ST/OBC/Women/Economically weaker student percentages: Student
+      profiles do not capture category or gender data.
+    · Geographical diversity (students from other states): Not tracked.
+      Required: Demographic fields in student registration.
+
+  Parameter 5 — Perception (PR) — 100 marks
+    · Academic Peer Perception and Employer Perception surveys are external
+      but institutional data quality (clean, auditable records) directly
+      influences the credibility of NIRF submissions.
+    · Gap: No audit log means submitted numbers cannot be independently
+      verified from system records.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4.4  QS WORLD UNIVERSITY RANKINGS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+QS ranks on 6 core indicators. This LMS can contribute indirectly to several:
+
+  Indicator 1 — Academic Reputation (40%) — Surveys of global academics
+    · An LMS with AI evaluation is a citable research and innovation output.
+    · Gap: No mechanism to publish or showcase the system as a tool that
+      supports research-led teaching.
+
+  Indicator 2 — Employer Reputation (10%) — Surveys of employers
+    · Placement records and graduate employment tracking are absent.
+    · The Career Counsellor module is a relevant student-support tool but is
+      too basic (8 static careers, random scoring noise) to be meaningfully
+      cited.
+
+  Indicator 3 — Faculty/Student Ratio (20%)
+    · Not computed by the current system. Required: FSR calculation and
+      historical dashboard.
+
+  Indicator 4 — Citations per Faculty (20%)
+    · Entirely outside current scope. Required: Research module linked to
+      Scopus/Web of Science or at minimum a manual publications tracker.
+
+  Indicator 5 — International Faculty Ratio (5%)
+    · Faculty profiles do not capture nationality or international origin.
+
+  Indicator 6 — International Student Ratio (5%)
+    · Student profiles do not capture nationality.
+
+  QS SUSTAINABILITY RANKING (newer, gaining weight)
+    · No sustainability tracking (energy usage, diversity, wellbeing) exists.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 5 — PRIORITISED IMPROVEMENTS & SUGGESTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Improvements are grouped in three tiers by urgency.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TIER 1 — IMMEDIATE (fix before any live use)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  I-1  Secure the API key
+       Move all Gemini API calls to the server. Remove the key from localStorage
+       completely. Frontend calls a proxied /api/gemini/evaluate endpoint; the
+       server holds the key in an environment variable. This also prevents
+       unauthenticated users from consuming the institution's API quota.
+
+  I-2  Hash passwords & enforce authentication middleware
+       Use bcrypt (cost factor ≥ 12) for all stored passwords. Issue a signed
+       JWT on login. Apply an Express middleware on all /api/* routes that
+       validates the JWT. Remove all hardcoded seed credentials.
+
+  I-3  Fix PASS/FAIL logic in marksheets
+       Replace the lexicographic comparison:
+         const result = data.grade >= 'C' ...
+       with an explicit ordered-grade array lookup:
+         const PASS_GRADES = ['O','A+','A','B+','B','C'];
+         const result = PASS_GRADES.includes(data.grade) ? 'PASS' : 'FAIL';
+       A student with grade F is currently shown as PASS — this is a legal
+       and institutional liability on an official document.
+
+  I-4  Fix the duplicate buildQBlock on the server
+       Update server/index.js buildQBlock to match the frontend version
+       (handle empty q.text when sub-sections are present). Ideally, move
+       this function to a shared module imported by both.
+
+  I-5  Add confirmation dialogs for destructive actions
+       "Extract Questions & Rubrics" must show a modal:
+       "This will overwrite all X question(s). Continue?"
+       Same for "Reset Paper" and all delete operations.
+
+  I-6  Replace synchronous JSON DB with a proper data store
+       Migrate all data to PostgreSQL (already partially wired). Remove the
+       itm_lms_db.json approach entirely or use it only as a read-only seed.
+       Add database connection pooling and proper transaction handling.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TIER 2 — SHORT-TERM (next development sprint)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  S-1  Persist exam paper configuration
+       Save the paper setup (questions, rubrics, sub-sections) to the database
+       as a draft before the first evaluation. On reload, offer to restore
+       the latest draft. Faculty should never lose a configured paper.
+
+  S-2  CO Attainment Dashboard (NBA/NAAC Priority)
+       Extend the question schema to store a CO tag per sub-section.
+       After each evaluation, aggregate marks by CO tag and display attainment
+       against configurable thresholds. Export attainment reports as PDF/CSV
+       for accreditation submissions.
+
+  S-3  Role-Based Access Control (NAAC Criterion 6)
+       Implement three distinct roles with enforced server-side permissions:
+         · Admin: full access to all modules and data management
+         · Faculty: access to own courses, evaluations, question bank
+         · Student: read-only access to own results and course materials
+       Route-level middleware must check role for every API call.
+
+  S-4  Student demographic fields (NIRF OI parameter)
+       Add to student registration: gender, category (General/OBC/SC/ST/EWS),
+       state of domicile, nationality. Add batch analytics page showing
+       diversity metrics exportable for NIRF submission.
+
+  S-5  Faculty qualification module (NIRF TLR, NBA Criterion 4)
+       Add to faculty profiles: highest qualification, PhD status, joining date,
+       list of publications (or Scopus/Google Scholar link), FDP attended,
+       courses assigned. Compute and display FSR on the dashboard.
+
+  S-6  Fix Career Counsellor
+       Remove Math.random() noise. Expand career list to at least 25–30
+       options covering STEM, Management, Law, Arts, and emerging fields.
+       Add CGPA range validation (0.0–10.0). Store assessment results per
+       student for longitudinal tracking.
+
+  S-7  Add Attendance Module (NAAC Criterion 2.3)
+       Enable faculty to mark per-lecture attendance for each course offering.
+       Auto-compute attendance percentage per student. Flag students below
+       75% threshold. This is a mandatory evidence requirement for NAAC.
+
+  S-8  Add Edit functionality to Question Bank
+       Allow editing of existing questions (all fields) without delete-and-
+       recreate. Fix ID generation to use UUID instead of count-based IDs
+       to prevent collisions after deletions.
+
+  S-9  Connect marksheet verification
+       Implement a public /verify?code=XXXX endpoint that returns the student
+       name, paper title, marks, and grade for a given verification code.
+       Remove the placeholder URL. This makes the marksheet legally defensible.
+
+  S-10 Configurable marksheet signatories and academic session
+       Store Controller of Examinations and Registrar names in a settings
+       table. Compute the academic session from the exam paper's creation date
+       (July–Dec = "20XX–20XX Odd Sem", Jan–June = "20XX–20XX Even Sem").
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TIER 3 — MEDIUM-TERM (accreditation readiness)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  M-1  CO-to-PO Mapping Module (NBA Priority)
+       Provide a configurable N×M matrix interface where faculty map each CO
+       to POs (with contribution levels: High/Medium/Low). Automatically
+       propagate CO attainment to PO attainment using the matrix. This is the
+       single most critical gap for NBA accreditation.
+
+  M-2  Indirect Assessment / Student Feedback Surveys (NBA/NAAC)
+       Add a survey module where students rate each CO at course-end on a
+       1–5 scale. Combine indirect attainment (surveys) with direct attainment
+       (exams) using the standard 80%/20% or 75%/25% blend. Export combined
+       attainment reports in NBA SSR format.
+
+  M-3  Research Output Module (NIRF RRP, QS Citations)
+       Enable faculty to log publications (journal name, year, Scopus/WoS
+       indexed flag, DOI), patents (filed / granted), funded projects, and
+       PhD scholars supervised. Generate a consolidated research report for
+       NIRF data submission.
+
+  M-4  Placement & Higher Education Records (NIRF GO)
+       Add a Placement module where the placement cell logs company, role,
+       package, and joining date per student. Track students who opted for
+       higher education (PG / PhD). Compute placement rate, median salary,
+       and higher education progression rate — all NIRF GO sub-indicators.
+
+  M-5  Alumni Module (NAAC Criterion 5)
+       Maintain alumni records post-graduation: current employer, designation,
+       last known location. Enable alumni surveys for employer perception data
+       (also relevant for QS Employer Reputation indicator).
+
+  M-6  Grievance & Re-evaluation Workflow (NAAC 2.5)
+       Students must be able to submit a grading grievance from their result
+       view. Grievances are routed to the faculty, who can revise marks with a
+       mandatory comment. All revisions are audit-logged with before/after
+       marks and timestamps. This is a legal requirement and a NAAC evidence
+       point.
+
+  M-7  IQAC Dashboard for automated AQAR generation (NAAC Criterion 6.5)
+       Aggregate all system data into a structured dashboard mirroring NAAC
+       AQAR sections: student enrolment data, pass percentages, CO attainment,
+       faculty qualification stats, placement rates, research outputs. Allow
+       one-click PDF export in the AQAR template format.
+
+  M-8  Split Evaluation.jsx into components (Technical Debt)
+       Refactor into:
+         EvaluationLayout.jsx      — tab and panel scaffolding
+         PaperSetup.jsx            — exam paper configuration
+         SingleEval.jsx            — single student evaluation
+         BulkEval.jsx              — bulk evaluation (already semi-separate)
+         TabulationView.jsx        — tabulation
+         MarksheetsView.jsx        — marksheet management
+         MarksheetPrint.jsx        — printable marksheet
+         PerQuestionResult.jsx     — result breakdown
+       Each file should be under 250 lines. Add unit tests for all pure
+       functions (computeGrade, qMax, buildQBlock, safeParseJSON).
+
+  M-9  Add React Router (Technical Debt)
+       Replace the onNavigate prop-drilling navigation with React Router v6.
+       Each module gets a dedicated URL path (/evaluation, /students, /qb,
+       etc.). Browser back/forward and deep-linking will work correctly. Page
+       state can be preserved via URL parameters.
+
+  M-10 Introduce a proper logging and monitoring system
+       Replace console.warn with a structured logger (Winston or Pino).
+       Log all Gemini API calls (token count, latency, errors) to a
+       persistent log table. Add a simple admin dashboard for system health:
+       API error rate, average evaluation time, storage usage.
+
+  M-11 Add Bloom's Taxonomy distribution report (NBA/NAAC quality evidence)
+       Generate a report per course showing the distribution of assessed
+       marks across Bloom's levels (Remembering, Understanding, Applying,
+       Analysing, Evaluating, Creating). NBA and NAAC both value evidence
+       that higher-order thinking skills are being assessed, not just recall.
+
+  M-12 Student portal view (NAAC Criterion 2, QS Student Experience)
+       Give students a login that shows their own results, marks per question,
+       AI feedback, attendance, and course materials. Students should not be
+       able to see other students' results. This also enables the student
+       self-service component required for NAAC's student-centredness metrics.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 6 — ACCREDITATION READINESS SCORECARD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Framework   Current Coverage    Target Coverage   Key Missing Items
+  ─────────── ─────────────────── ─────────────────  ──────────────────────────
+  NBA          25%                 80%               CO/PO attainment, indirect
+                                                     assessment, audit trail,
+                                                     faculty qualification data
+  ─────────── ─────────────────── ─────────────────  ──────────────────────────
+  NAAC         20%                 70%               Attendance, diversity data,
+                                                     research module, IQAC
+                                                     dashboard, grievances, alumni
+  ─────────── ─────────────────── ─────────────────  ──────────────────────────
+  NIRF         15%                 65%               Research output, placement,
+                                                     demographic fields, FSR,
+                                                     PhD-qualified faculty count
+  ─────────── ─────────────────── ─────────────────  ──────────────────────────
+  QS           10%                 40%               Publications/citations,
+                                                     international diversity,
+                                                     employer/alumni surveys
+  ─────────── ─────────────────── ─────────────────  ──────────────────────────
+
+  NOTE: "Current Coverage" reflects data the system currently captures or
+  could directly supply to accreditation submissions. It does NOT reflect
+  completeness of the software itself.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 7 — WHAT IS ALREADY WORKING WELL (STRENGTHS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1.  AI-powered handwritten evaluation is a genuine institutional innovation.
+      Very few universities in India deploy multimodal AI for automated
+      evaluation at this granularity (per-question, per-sub-section, with
+      rubric enforcement). This is highly citable in NAAC Best Practices,
+      NBA evidence, and promotional material for QS reputation surveys.
+
+  2.  Rubric-based structured assessment aligns correctly with NBA and NAAC
+      requirements for transparent, outcome-linked evaluation. The ability to
+      auto-generate rubrics from model answer sheets further reduces faculty
+      workload while improving consistency.
+
+  3.  Sub-section support in evaluation matches real exam paper structure
+      (Q1(a), Q1(b)) correctly, providing fine-grained marks and feedback
+      at the sub-question level — an improvement over most institutional
+      evaluation tools.
+
+  4.  CO and Bloom's Taxonomy tagging in the Question Bank is the right
+      architecture for NBA compliance. The data model is already in place;
+      the missing piece is the attainment computation layer on top of it.
+
+  5.  Digital marksheets with verification codes establish a paperless
+      certification workflow that NAAC recognises under best practices in
+      administration and governance.
+
+  6.  Bulk evaluation with real-time progress via Socket.IO is a
+      production-grade feature that can scale to a full examination cohort
+      without bottlenecking faculty time.
+
+  7.  Dual database architecture (JSON fallback + PostgreSQL) ensures the
+      system works even without infrastructure, lowering the barrier to
+      adoption in resource-constrained settings.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 8 — SUGGESTED DEVELOPMENT ROADMAP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Phase 1 — Security & Stability (1–3 weeks)
+  ············································
+  I-1 through I-6: API key security, auth middleware, password hashing,
+  PASS/FAIL fix, duplicate function fix, database migration, confirmation
+  dialogs. System must be secure before any live data is entered.
+
+  Phase 2 — Core Academic Data (4–8 weeks)
+  ··········································
+  S-1 Paper persistence, S-3 RBAC, S-4 Demographics, S-5 Faculty quals,
+  S-7 Attendance, S-8 Question edit, S-9 Marksheet verification,
+  S-10 Configurable signatories.
+  Goal: System holds all data required for NAAC SSR Criteria 1, 2, 4.
+
+  Phase 3 — NBA Compliance (8–14 weeks)
+  ·······································
+  S-2 CO Attainment Dashboard, M-1 CO-to-PO Mapping, M-2 Surveys,
+  M-11 Bloom's Distribution Report, S-6 Career Counsellor rebuild.
+  Goal: System can produce all direct and indirect attainment evidence
+  required for NBA Tier-I SAR Criteria 3, 4, 5.
+
+  Phase 4 — NIRF & QS Data (14–22 weeks)
+  ·········································
+  M-3 Research Module, M-4 Placement Records, M-5 Alumni Module,
+  M-6 Grievances, M-12 Student Portal.
+  Goal: System can auto-populate NIRF data portal fields for TLR, GO, OI.
+
+  Phase 5 — Quality & Governance (22–30 weeks)
+  ··············································
+  M-7 IQAC Dashboard / AQAR export, M-8 Code refactor, M-9 React Router,
+  M-10 Logging & monitoring, write automated test suite.
+  Goal: System is production-grade, auditable, and maintainable by a
+  second developer without the original author.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 9 — QUICK REFERENCE: FLAW → IMPROVEMENT MAPPING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Flaw                                   Fix ID   Accreditation Impact
+  ─────────────────────────────────────  ───────  ─────────────────────────────
+  Gemini key in localStorage             I-1      Security prerequisite for all
+  Plaintext passwords / no auth          I-2      NAAC 6.2, legal compliance
+  PASS/FAIL shows F as PASS              I-3      Legal liability, NAAC 2.5
+  Duplicate buildQBlock server/client    I-4      Evaluation consistency
+  No confirmation on destructive actions I-5      Data integrity
+  JSON DB race condition / data loss     I-6      All frameworks — data must be
+                                                   reliable for submissions
+  Paper lost on page reload              S-1      Faculty usability
+  No CO attainment computation           S-2      NBA Criterion 3 (high weight)
+  No RBAC                                S-3      NAAC 6.2, data privacy
+  No demographic fields                  S-4      NIRF OI parameter
+  No faculty qualification data          S-5      NIRF TLR, NBA Criterion 4
+  Random Career Counsellor scoring       S-6      Student welfare credibility
+  No attendance module                   S-7      NAAC 2.3 (mandatory evidence)
+  No question edit                       S-8      Question Bank usability
+  Unverifiable marksheet URL             S-9      Legal defensibility
+  Hardcoded signatories / session        S-10     Official document accuracy
+  No CO-to-PO mapping                    M-1      NBA primary accreditation gap
+  No indirect assessment surveys         M-2      NBA/NAAC attainment evidence
+  No research module                     M-3      NIRF RRP (100 marks)
+  No placement records                   M-4      NIRF GO (100 marks)
+  No alumni module                       M-5      NAAC 5, QS Employer Rep
+  No grievance workflow                  M-6      NAAC 2.5, legal compliance
+  No IQAC dashboard                      M-7      NAAC 6.5 critical gap
+  Monolithic Evaluation.jsx              M-8      Maintainability / testability
+  No React Router                        M-9      Developer experience
+  No structured logging                  M-10     Audit trail for submissions
+  No Bloom's distribution report         M-11     NBA/NAAC quality evidence
+  No student-facing portal               M-12     NAAC student-centredness
+
+
+================================================================================
+  END OF REPORT
+  ITM LMS — Project Report v1.0 — 19-May-2026
+  For internal use only. Not for public distribution.
+================================================================================

@@ -1,0 +1,47 @@
+# ── Dependencies ────────────────────────────────────────────
+node_modules/
+
+# ── Environment & secrets ───────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Build output ────────────────────────────────────────────
+dist/
+build/
+
+# ── Vite cache ──────────────────────────────────────────────
+.vite/
+
+# ── Uploads (runtime, not source) ───────────────────────────
+server/uploads/
+
+# ── JSON file-store fallback (contains student/grade data) ──
+server/itm_lms_db.json
+server/*.json
+
+# ── Logs ────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── OS / Editor ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/settings.json
+*.suo
+*.user
+
+# ── Temp ────────────────────────────────────────────────────
+*.tmp
+*.bak
+tmp/
+temp/
+
+# ── Screenshots / non-code assets ───────────────────────────
+current-ui/

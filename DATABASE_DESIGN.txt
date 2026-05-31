@@ -1,0 +1,961 @@
+================================================================================
+  ITM UNIVERSITY LMS — DATABASE DESIGN DOCUMENT
+  Version 1.0 | ITM University, Gwalior
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+  1.  Overview
+  2.  Current State vs. Recommended Full Schema
+  3.  Storage Architecture
+  4.  Table Definitions (All Tables)
+  5.  Relationships & Foreign Keys
+  6.  Entity-Relationship Summary
+  7.  Indexes & Performance
+  8.  Seed / Default Data
+  9.  Feature-to-Table Mapping
+  10. Known Issues in Current Implementation
+  11. Migration Roadmap (JSON → PostgreSQL)
+
+
+================================================================================
+1. OVERVIEW
+================================================================================
+
+The ITM LMS serves three user roles — Admin, Faculty, and Student.
+It manages the full academic lifecycle:
+
+  • Student admissions, profiles, and login
+  • Faculty and department management
+  • Course catalog and course enrollment
+  • Question bank with CO/Bloom's taxonomy tagging
+  • AI-powered exam paper generation
+  • AI evaluation of handwritten answer sheets (Google Gemini)
+  • Examination hierarchy: Endsem/Midsem → Subject papers → Student results
+  • Official marksheet generation with tamper-proof verification codes
+  • LMS resources and announcements per course
+  • Role-based access control (RBAC)
+  • Student self-service portal with editable/locked profile fields
+
+Primary database target: PostgreSQL 14+
+Fallback (current): Flat JSON file (itm_lms_db.json) for development
+
+
+================================================================================
+2. CURRENT STATE vs. RECOMMENDED FULL SCHEMA
+================================================================================
+
+  CURRENTLY IN PostgreSQL (pgdb.js):
+  -----------------------------------
+  [x] exam_papers
+  [x] exam_questions
+  [x] student_results
+  [x] question_responses
+  [x] marksheets
+
+  CURRENTLY IN JSON ONLY (db.js):
+  ---------------------------------
+  [x] users
+  [x] students
+  [x] faculty
+  [x] departments
+  [x] courses
+  [x] questions
+  [x] eval_sessions
+  [x] evaluations  (legacy flat evaluation records)
+  [x] lms_resources
+  [x] lms_announcements
+  [ ] exam_papers (duplicate — exists in both stores)
+
+  MISSING — NOT YET IMPLEMENTED:
+  --------------------------------
+  [ ] programs              (academic programs: B.Tech CSE, MBA, etc.)
+  [ ] course_enrollments    (which students are enrolled in which courses)
+  [ ] faculty_courses       (which faculty teaches which course)
+  [ ] examinations          (parent: Endsem 2024, Midsem Sem-4, etc.)
+  [ ] examination_papers    (join: examination ↔ exam_paper, one per subject)
+  [ ] profile_change_requests  (student requests to change locked fields)
+  [ ] notifications
+  [ ] student_result_summary   (aggregate per examination per student)
+
+
+================================================================================
+3. STORAGE ARCHITECTURE
+================================================================================
+
+  [React Frontend]
+       |
+       | REST API + Socket.IO
+       |
+  [Express Server]
+       |
+       |── [PostgreSQL] ← Primary store for all academic records
+       |        Tables: users, students, faculty, departments, programs,
+       |                courses, course_enrollments, faculty_courses,
+       |                questions, exam_papers, exam_questions,
+       |                examinations, examination_papers,
+       |                student_results, question_responses,
+       |                marksheets, lms_resources, lms_announcements,
+       |                eval_sessions, notifications,
+       |                profile_change_requests
+       |
+       └── [JSON file] ← Development fallback only (itm_lms_db.json)
+                         Used when DATABASE_URL env var is not set.
+                         NOT suitable for production.
+
+  Dual-write pattern (current):
+    - Bulk evaluation writes to JSON always, PostgreSQL when available.
+    - All other writes go directly to JSON until migration is complete.
+
+
+================================================================================
+4. TABLE DEFINITIONS
+================================================================================
+
+All IDs use VARCHAR(36) storing UUID v4 values unless stated otherwise.
+All timestamps use TIMESTAMPTZ (timezone-aware).
+Passwords must be stored as bcrypt hashes (min cost 10) — not plaintext.
+
+────────────────────────────────────────────────────────────────────────────────
+4.1  USERS
+────────────────────────────────────────────────────────────────────────────────
+Stores admin and faculty login credentials.
+Students have their own table and use student_id as password.
+
+  CREATE TABLE users (
+    id            VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    email         VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,          -- bcrypt hash
+    name          VARCHAR(255) NOT NULL,
+    role          VARCHAR(20)  NOT NULL CHECK (role IN ('admin','faculty')),
+    is_active     BOOLEAN      DEFAULT TRUE,
+    last_login    TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ  DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+  Notes:
+  - Students do NOT appear in this table; they log in via the students table.
+  - 'student' role is excluded from CHECK — only admin and faculty here.
+  - last_login should be updated on every successful login.
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.2  STUDENTS
+────────────────────────────────────────────────────────────────────────────────
+The primary student record. Also serves as the student login source
+(password = student_id, e.g. ITM2024001).
+
+  CREATE TABLE students (
+    -- Admission / Identity (admin-locked)
+    id                VARCHAR(36)  PRIMARY KEY,   -- e.g. ITM2024001
+    enrollment_no     VARCHAR(100) UNIQUE,
+    first_name        VARCHAR(100) NOT NULL,
+    last_name         VARCHAR(100) NOT NULL,
+    email             VARCHAR(255) UNIQUE NOT NULL,
+    department_id     VARCHAR(36)  REFERENCES departments(id),
+    program_id        VARCHAR(36)  REFERENCES programs(id),
+    batch             VARCHAR(20)  NOT NULL,       -- e.g. 2024-2028
+    category          VARCHAR(20)  DEFAULT 'General'
+                        CHECK (category IN ('General','OBC','OBC-NCL','SC','ST','EWS')),
+    father_name       VARCHAR(255) DEFAULT '',
+    mother_name       VARCHAR(255) DEFAULT '',
+    permanent_address TEXT         DEFAULT '',
+    status            VARCHAR(20)  DEFAULT 'active'
+                        CHECK (status IN ('active','inactive','pending','graduated')),
+
+    -- Personal (student-editable)
+    phone             VARCHAR(20)  DEFAULT '',
+    whatsapp          VARCHAR(20)  DEFAULT '',
+    gender            VARCHAR(30)  DEFAULT '',
+    date_of_birth     DATE,
+    nationality       VARCHAR(50)  DEFAULT 'Indian',
+    religion          VARCHAR(50)  DEFAULT '',
+    blood_group       VARCHAR(5)   DEFAULT '',
+    medical_history   TEXT         DEFAULT '',
+    local_address     TEXT         DEFAULT '',
+    hobbies           TEXT         DEFAULT '',
+    career_options    TEXT         DEFAULT '',
+    achievements      TEXT         DEFAULT '',
+    linkedin          VARCHAR(255) DEFAULT '',
+    github            VARCHAR(255) DEFAULT '',
+
+    created_at        TIMESTAMPTZ  DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+  Notes:
+  - Fields above the blank line are admin-only (locked from student edits).
+  - Fields below can be updated freely by the student via the Student Portal.
+  - department_id and program_id are FKs; department/program names are denormalised
+    as strings in the JSON fallback.
+  - The student logs in using: email + id (student_id) as password.
+    Auth endpoint checks: students.email = ? AND students.id = ?
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.3  PROFILE_CHANGE_REQUESTS
+────────────────────────────────────────────────────────────────────────────────
+When a student wants to change a locked field (e.g. name, department),
+they submit a request. Admin approves/rejects.
+
+  CREATE TABLE profile_change_requests (
+    id            VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id    VARCHAR(36)  NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    field_name    VARCHAR(100) NOT NULL,    -- e.g. 'first_name', 'department_id'
+    old_value     TEXT         NOT NULL,
+    requested_value TEXT       NOT NULL,
+    reason        TEXT         DEFAULT '',
+    status        VARCHAR(20)  DEFAULT 'pending'
+                    CHECK (status IN ('pending','approved','rejected')),
+    reviewed_by   VARCHAR(36)  REFERENCES users(id),
+    reviewed_at   TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.4  DEPARTMENTS
+────────────────────────────────────────────────────────────────────────────────
+
+  CREATE TABLE departments (
+    id          VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        VARCHAR(255) UNIQUE NOT NULL,
+    code        VARCHAR(20)  UNIQUE NOT NULL,   -- e.g. CSE, ECE, MGT
+    hod_id      VARCHAR(36)  REFERENCES faculty(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+  Current seed: CSE, MGT, ECE, ME, SCI, LAW
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.5  PROGRAMS
+────────────────────────────────────────────────────────────────────────────────
+Academic programs offered by the university.
+
+  CREATE TABLE programs (
+    id             VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    name           VARCHAR(255) UNIQUE NOT NULL,   -- e.g. B.Tech CSE
+    short_name     VARCHAR(50),                    -- e.g. B.Tech
+    department_id  VARCHAR(36)  REFERENCES departments(id),
+    duration_years SMALLINT     DEFAULT 4,
+    total_semesters SMALLINT    DEFAULT 8,
+    is_active      BOOLEAN      DEFAULT TRUE,
+    created_at     TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+  Sample data:
+    B.Tech CSE (8 sem), B.Tech ECE (8 sem), B.Tech ME (8 sem),
+    BBA (6 sem), MBA (4 sem), BCA (6 sem), MCA (4 sem),
+    B.Sc Hons (6 sem), BA LLB (10 sem), LLM (4 sem)
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.6  FACULTY
+────────────────────────────────────────────────────────────────────────────────
+
+  CREATE TABLE faculty (
+    id              VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    name            VARCHAR(255) NOT NULL,
+    email           VARCHAR(255) UNIQUE NOT NULL,
+    phone           VARCHAR(20)  DEFAULT '',
+    department_id   VARCHAR(36)  REFERENCES departments(id) ON DELETE SET NULL,
+    designation     VARCHAR(100) DEFAULT 'Assistant Professor'
+                      CHECK (designation IN (
+                        'Professor','Associate Professor','Assistant Professor',
+                        'Lecturer','HOD','Visiting Faculty'
+                      )),
+    specialization  VARCHAR(255) DEFAULT '',
+    qualification   VARCHAR(255) DEFAULT '',
+    experience_years SMALLINT   DEFAULT 0,
+    is_active       BOOLEAN      DEFAULT TRUE,
+    created_at      TIMESTAMPTZ  DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+  Notes:
+  - faculty.email must match users.email for login to work.
+    (users table holds the password; faculty table holds the profile.)
+  - HOD of a department references faculty via departments.hod_id.
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.7  COURSES
+────────────────────────────────────────────────────────────────────────────────
+
+  CREATE TABLE courses (
+    id             VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    code           VARCHAR(20)  UNIQUE NOT NULL,    -- e.g. CSE301
+    name           VARCHAR(255) NOT NULL,
+    department_id  VARCHAR(36)  REFERENCES departments(id) ON DELETE SET NULL,
+    credits        SMALLINT     NOT NULL DEFAULT 3,
+    type           VARCHAR(20)  DEFAULT 'Core'
+                     CHECK (type IN ('Core','Elective','Lab','Project','Audit')),
+    max_students   SMALLINT     DEFAULT 60,
+    semester       VARCHAR(10)  DEFAULT '1st',      -- 1st through 8th
+    description    TEXT         DEFAULT '',
+    is_active      BOOLEAN      DEFAULT TRUE,
+    created_at     TIMESTAMPTZ  DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+  Derived field: enrolled count = COUNT(course_enrollments WHERE course_id = ?)
+  (Do not store enrolled count directly — compute from enrollments table.)
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.8  FACULTY_COURSES  (Who teaches what)
+────────────────────────────────────────────────────────────────────────────────
+Maps which faculty member is assigned to teach which course, for a given
+academic year and semester. Enables admin to view "courses run by each faculty."
+
+  CREATE TABLE faculty_courses (
+    id              VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    faculty_id      VARCHAR(36)  NOT NULL REFERENCES faculty(id) ON DELETE CASCADE,
+    course_id       VARCHAR(36)  NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    academic_year   VARCHAR(20)  NOT NULL,   -- e.g. 2024-25
+    semester_label  VARCHAR(10)  NOT NULL,   -- e.g. ODD, EVEN or specific sem
+    is_active       BOOLEAN      DEFAULT TRUE,
+    assigned_at     TIMESTAMPTZ  DEFAULT NOW(),
+    UNIQUE (faculty_id, course_id, academic_year, semester_label)
+  );
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.9  COURSE_ENROLLMENTS  (Which students are in which course)
+────────────────────────────────────────────────────────────────────────────────
+
+  CREATE TABLE course_enrollments (
+    id            VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id    VARCHAR(36)  NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    course_id     VARCHAR(36)  NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    academic_year VARCHAR(20)  NOT NULL,
+    enrolled_at   TIMESTAMPTZ  DEFAULT NOW(),
+    status        VARCHAR(20)  DEFAULT 'enrolled'
+                    CHECK (status IN ('enrolled','dropped','completed')),
+    UNIQUE (student_id, course_id, academic_year)
+  );
+
+  Notes:
+  - This table is the source of truth for "enrolled" count on courses.
+  - Students see only their enrolled courses in "My Courses".
+  - Faculty see all students enrolled in their course.
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.10  QUESTIONS  (Question Bank)
+────────────────────────────────────────────────────────────────────────────────
+Stores the question bank used for paper generation and AI evaluation.
+
+  CREATE TABLE questions (
+    id          VARCHAR(36)   PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id   VARCHAR(36)   REFERENCES courses(id) ON DELETE SET NULL,
+    course_code VARCHAR(20)   NOT NULL,             -- denormalised for speed
+    course_name VARCHAR(255)  DEFAULT '',
+    type        VARCHAR(20)   NOT NULL
+                  CHECK (type IN ('mcq','short','long','numerical','case-study')),
+    topic       VARCHAR(255)  DEFAULT '',
+    difficulty  VARCHAR(20)   DEFAULT 'medium'
+                  CHECK (difficulty IN ('easy','medium','hard')),
+    -- NBA/NAAC outcome mapping
+    co          VARCHAR(20)   DEFAULT '',            -- Course Outcome e.g. CO1
+    po          VARCHAR(20)   DEFAULT '',            -- Programme Outcome e.g. PO3
+    blooms      VARCHAR(30)   DEFAULT ''
+                  CHECK (blooms IN (
+                    'remember','understand','apply',
+                    'analyze','evaluate','create',''
+                  )),
+    -- Content
+    text        TEXT          NOT NULL,
+    options     JSONB         DEFAULT NULL,          -- {A:.., B:.., C:.., D:..}
+    correct     VARCHAR(5)    DEFAULT NULL,          -- 'A','B','C','D' for MCQ
+    marks       SMALLINT      DEFAULT 1,
+    created_by  VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ   DEFAULT NOW()
+  );
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.11  EXAM_PAPERS
+────────────────────────────────────────────────────────────────────────────────
+A structured exam paper (question paper used for a specific subject in an exam).
+Each exam paper belongs to one subject of one examination event.
+
+  CREATE TABLE exam_papers (
+    id               VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    title            VARCHAR(255) NOT NULL DEFAULT 'Untitled Exam',
+    subject          VARCHAR(255) DEFAULT '',
+    course_id        VARCHAR(36)  REFERENCES courses(id) ON DELETE SET NULL,
+    program          VARCHAR(255) DEFAULT '',
+    semester         VARCHAR(100) DEFAULT '',
+    total_marks      INTEGER      DEFAULT 0,
+    examination_id   VARCHAR(36)  REFERENCES examinations(id) ON DELETE SET NULL,
+    created_by       VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+    created_at       TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+  Notes:
+  - examination_id links this paper to a parent Examination event
+    (e.g. "End Semester 2024 — Sem 4").
+  - One exam_paper = one subject's question paper for one exam event.
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.12  EXAM_QUESTIONS
+────────────────────────────────────────────────────────────────────────────────
+Individual questions as they appear in an exam_paper (may differ from question
+bank entries — marks, order, and rubric can be customised per paper).
+
+  CREATE TABLE exam_questions (
+    id             VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    paper_id       VARCHAR(36)  NOT NULL REFERENCES exam_papers(id) ON DELETE CASCADE,
+    question_no    INTEGER      NOT NULL,
+    question_text  TEXT         NOT NULL DEFAULT '',
+    max_marks      INTEGER      NOT NULL DEFAULT 10,
+    rubric         TEXT         DEFAULT '',
+    sub_sections   JSONB        DEFAULT '[]',
+    -- sub_sections structure:
+    -- [{ label:"a", text:"...", maxMarks:5, rubric:"..." }, ...]
+    created_at     TIMESTAMPTZ  DEFAULT NOW(),
+    UNIQUE (paper_id, question_no)
+  );
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.13  EXAMINATIONS  (Parent examination event)
+────────────────────────────────────────────────────────────────────────────────
+The top-level examination event. All subject papers and results hang off this.
+
+  CREATE TABLE examinations (
+    id             VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    title          VARCHAR(255) NOT NULL,
+    -- e.g. "End Semester Examination — B.Tech CSE Sem 4 (2024-25)"
+    type           VARCHAR(30)  NOT NULL DEFAULT 'endsem'
+                     CHECK (type IN ('endsem','midsem','internal','practical','viva')),
+    semester       VARCHAR(20)  DEFAULT '',    -- e.g. 4th
+    program_id     VARCHAR(36)  REFERENCES programs(id) ON DELETE SET NULL,
+    academic_year  VARCHAR(20)  NOT NULL,      -- e.g. 2024-25
+    start_date     DATE,
+    end_date       DATE,
+    status         VARCHAR(20)  DEFAULT 'scheduled'
+                     CHECK (status IN ('scheduled','ongoing','evaluated','published')),
+    -- 'published' = admin has released results to students
+    published_at   TIMESTAMPTZ,
+    published_by   VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+    created_by     VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+    created_at     TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+  Lifecycle:
+    scheduled → ongoing → evaluated → published
+    Only when status = 'published' can students see their marks in My Portal.
+    Only admin can set status = 'published'.
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.14  EVAL_SESSIONS  (Bulk AI Evaluation Sessions)
+────────────────────────────────────────────────────────────────────────────────
+A session groups a batch upload of student answer sheets for the same subject.
+
+  CREATE TABLE eval_sessions (
+    id            VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    name          VARCHAR(255) DEFAULT 'Unnamed Session',
+    subject       VARCHAR(255) DEFAULT '',
+    max_marks     INTEGER      DEFAULT 100,
+    paper_id      VARCHAR(36)  REFERENCES exam_papers(id) ON DELETE SET NULL,
+    created_by    VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+    status        VARCHAR(20)  DEFAULT 'active'
+                    CHECK (status IN ('active','completed','archived')),
+    created_at    TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.15  STUDENT_RESULTS
+────────────────────────────────────────────────────────────────────────────────
+The AI-generated result for one student's answer sheet for one exam paper.
+
+  CREATE TABLE student_results (
+    id                   VARCHAR(36)   PRIMARY KEY DEFAULT gen_random_uuid(),
+    paper_id             VARCHAR(36)   NOT NULL REFERENCES exam_papers(id) ON DELETE CASCADE,
+    session_id           VARCHAR(36)   REFERENCES eval_sessions(id) ON DELETE SET NULL,
+    student_id           VARCHAR(36)   REFERENCES students(id) ON DELETE SET NULL,
+    student_name         VARCHAR(255)  DEFAULT '',   -- denormalised snapshot
+    roll_no              VARCHAR(100)  DEFAULT '',
+    enrollment_no        VARCHAR(100)  DEFAULT '',
+    total_marks_obtained DECIMAL(7,2)  DEFAULT 0,
+    max_marks            INTEGER       DEFAULT 0,
+    percentage           DECIMAL(5,2)  DEFAULT 0,
+    grade                VARCHAR(5)    DEFAULT 'F',
+    transcription        TEXT          DEFAULT '',   -- AI-extracted answer text
+    detailed_feedback    TEXT          DEFAULT '',
+    strengths            JSONB         DEFAULT '[]',
+    improvements         JSONB         DEFAULT '[]',
+    comparison_notes     TEXT          DEFAULT '',
+    teacher_note         TEXT          DEFAULT '',
+    needs_review         BOOLEAN       DEFAULT FALSE,
+    is_published         BOOLEAN       DEFAULT FALSE,  -- set TRUE when exam published
+    created_at           TIMESTAMPTZ   DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ   DEFAULT NOW()
+  );
+
+  Notes:
+  - student_id FK allows joining directly to the students table.
+  - student_name/roll_no/enrollment_no are kept as snapshots in case the
+    student record is later modified.
+  - is_published mirrors the parent examination's published status.
+    Student Portal only shows results WHERE is_published = TRUE.
+  - grade scale: O(≥90), A+(≥80), A(≥70), B+(≥60), B(≥50), C(≥40), F(<40)
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.16  QUESTION_RESPONSES
+────────────────────────────────────────────────────────────────────────────────
+Per-question breakdown of marks within a student result.
+
+  CREATE TABLE question_responses (
+    id                    VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    result_id             VARCHAR(36)  NOT NULL REFERENCES student_results(id) ON DELETE CASCADE,
+    question_no           INTEGER      NOT NULL,
+    question_text         TEXT         DEFAULT '',
+    marks_awarded         DECIMAL(7,2) DEFAULT 0,
+    max_marks             INTEGER      DEFAULT 0,
+    feedback              TEXT         DEFAULT '',
+    sub_section_responses JSONB        DEFAULT '[]',
+    -- sub_section_responses structure:
+    -- [{ label:"a", marksAwarded:4, maxMarks:5, feedback:"..." }, ...]
+    created_at            TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.17  MARKSHEETS
+────────────────────────────────────────────────────────────────────────────────
+Official, digitally verifiable marksheet issued by admin after all subject
+evaluations of an examination are complete.
+
+  CREATE TABLE marksheets (
+    id                VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    examination_id    VARCHAR(36)  REFERENCES examinations(id) ON DELETE CASCADE,
+    student_id        VARCHAR(36)  REFERENCES students(id) ON DELETE CASCADE,
+    student_name      VARCHAR(255) DEFAULT '',    -- snapshot at time of issue
+    roll_no           VARCHAR(100) DEFAULT '',
+    enrollment_no     VARCHAR(100) DEFAULT '',
+    program           VARCHAR(255) DEFAULT '',
+    semester          VARCHAR(100) DEFAULT '',
+    academic_year     VARCHAR(20)  DEFAULT '',
+    total_marks       INTEGER      DEFAULT 0,
+    max_marks         INTEGER      DEFAULT 0,
+    percentage        DECIMAL(5,2) DEFAULT 0,
+    overall_grade     VARCHAR(5)   DEFAULT 'F',
+    result_status     VARCHAR(10)  DEFAULT 'PASS'
+                        CHECK (result_status IN ('PASS','FAIL','ATKT','ABSENT')),
+    verification_code VARCHAR(100) UNIQUE NOT NULL,
+    issued_by         VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+    issued_at         TIMESTAMPTZ  DEFAULT NOW(),
+    remarks           TEXT         DEFAULT ''
+  );
+
+  Verification:
+  - verification_code is a UUID or hash generated at issue time.
+  - Public URL: /verify/:verification_code → shows student name, exam, marks.
+  - Marksheet can only be issued by admin after examination.status = 'evaluated'.
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.18  MARKSHEET_SUBJECTS
+────────────────────────────────────────────────────────────────────────────────
+Line items on a marksheet — one row per subject.
+
+  CREATE TABLE marksheet_subjects (
+    id                VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    marksheet_id      VARCHAR(36)  NOT NULL REFERENCES marksheets(id) ON DELETE CASCADE,
+    result_id         VARCHAR(36)  NOT NULL REFERENCES student_results(id),
+    paper_id          VARCHAR(36)  REFERENCES exam_papers(id),
+    subject_name      VARCHAR(255) NOT NULL,
+    course_code       VARCHAR(20)  DEFAULT '',
+    marks_obtained    DECIMAL(7,2) DEFAULT 0,
+    max_marks         INTEGER      DEFAULT 0,
+    grade             VARCHAR(5)   DEFAULT 'F',
+    credits           SMALLINT     DEFAULT 3,
+    is_pass           BOOLEAN      DEFAULT TRUE
+  );
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.19  LMS_RESOURCES
+────────────────────────────────────────────────────────────────────────────────
+
+  CREATE TABLE lms_resources (
+    id            VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id     VARCHAR(36)  NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    title         VARCHAR(255) NOT NULL,
+    type          VARCHAR(30)  DEFAULT 'pdf'
+                    CHECK (type IN ('pdf','video','assignment','link','document','other')),
+    url           TEXT         DEFAULT '',
+    file_path     TEXT         DEFAULT '',   -- for uploaded files
+    uploaded_by   VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+    due_date      DATE,
+    is_visible    BOOLEAN      DEFAULT TRUE,
+    created_at    TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.20  LMS_ANNOUNCEMENTS
+────────────────────────────────────────────────────────────────────────────────
+Announcements posted per course. Hierarchy: admin can broadcast to all;
+faculty broadcast to enrolled students of their course.
+
+  CREATE TABLE lms_announcements (
+    id            VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id     VARCHAR(36)  REFERENCES courses(id) ON DELETE CASCADE,
+    -- course_id NULL = university-wide broadcast (admin only)
+    title         VARCHAR(255) NOT NULL,
+    content       TEXT         DEFAULT '',
+    author_id     VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+    author_name   VARCHAR(255) DEFAULT '',   -- snapshot
+    audience      VARCHAR(20)  DEFAULT 'all'
+                    CHECK (audience IN ('all','faculty','students')),
+    is_pinned     BOOLEAN      DEFAULT FALSE,
+    expires_at    TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+  Audience logic:
+    admin  → audience='all' with course_id=NULL  → visible to everyone
+    admin  → audience='faculty'                  → visible to faculty only
+    admin  → audience='students'                 → visible to students only
+    faculty → course_id=<id>, audience='students' → students of that course only
+    faculty → course_id=<id>, audience='all'      → all members of that course
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.21  NOTIFICATIONS
+────────────────────────────────────────────────────────────────────────────────
+
+  CREATE TABLE notifications (
+    id            VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       VARCHAR(36),   -- NULL = broadcast to all
+    student_id    VARCHAR(36)  REFERENCES students(id) ON DELETE CASCADE,
+    type          VARCHAR(30)  DEFAULT 'info'
+                    CHECK (type IN ('info','success','warning','result','marksheet')),
+    title         VARCHAR(255) NOT NULL,
+    message       TEXT         DEFAULT '',
+    link_page     VARCHAR(100) DEFAULT '',   -- e.g. 'student_portal'
+    is_read       BOOLEAN      DEFAULT FALSE,
+    created_at    TIMESTAMPTZ  DEFAULT NOW()
+  );
+
+
+================================================================================
+5. RELATIONSHIPS & FOREIGN KEYS
+================================================================================
+
+  students.department_id      → departments.id
+  students.program_id         → programs.id
+
+  faculty.department_id       → departments.id
+  departments.hod_id          → faculty.id  (circular — use DEFERRABLE)
+
+  programs.department_id      → departments.id
+
+  courses.department_id       → departments.id
+
+  faculty_courses.faculty_id  → faculty.id
+  faculty_courses.course_id   → courses.id
+
+  course_enrollments.student_id → students.id
+  course_enrollments.course_id  → courses.id
+
+  questions.course_id         → courses.id
+
+  exam_papers.course_id       → courses.id
+  exam_papers.examination_id  → examinations.id  ← KEY HIERARCHY LINK
+
+  exam_questions.paper_id     → exam_papers.id
+
+  examinations.program_id     → programs.id
+  examinations.published_by   → users.id
+
+  eval_sessions.paper_id      → exam_papers.id
+
+  student_results.paper_id    → exam_papers.id
+  student_results.session_id  → eval_sessions.id
+  student_results.student_id  → students.id
+
+  question_responses.result_id → student_results.id
+
+  marksheets.examination_id   → examinations.id
+  marksheets.student_id       → students.id
+  marksheets.issued_by        → users.id
+
+  marksheet_subjects.marksheet_id → marksheets.id
+  marksheet_subjects.result_id    → student_results.id
+  marksheet_subjects.paper_id     → exam_papers.id
+
+  lms_resources.course_id     → courses.id
+  lms_resources.uploaded_by   → users.id
+
+  lms_announcements.course_id → courses.id
+  lms_announcements.author_id → users.id
+
+  profile_change_requests.student_id  → students.id
+  profile_change_requests.reviewed_by → users.id
+
+
+================================================================================
+6. ENTITY-RELATIONSHIP SUMMARY
+================================================================================
+
+  ACADEMIC HIERARCHY (top-down):
+
+    departments
+        │
+        ├── programs (B.Tech CSE, MBA …)
+        │       │
+        │       └── students (enrolled in program)
+        │
+        ├── faculty
+        │
+        └── courses
+                │
+                ├── faculty_courses (faculty ↔ course, many-to-many)
+                ├── course_enrollments (student ↔ course, many-to-many)
+                ├── lms_resources
+                ├── lms_announcements
+                └── questions (question bank)
+
+  EXAMINATION HIERARCHY:
+
+    examinations (Endsem 2024, Midsem Sem-4 …)
+        │
+        └── exam_papers (one per subject, e.g. DSA paper)
+                │
+                ├── exam_questions (Q1, Q2(a), Q2(b) …)
+                │
+                └── student_results (one per student)
+                        │
+                        └── question_responses (per-question marks)
+
+  MARKSHEET HIERARCHY:
+
+    examinations
+        │
+        └── marksheets (one per student, issued by admin post-evaluation)
+                │
+                └── marksheet_subjects (one row per subject in the exam)
+
+  RESULT VISIBILITY RULE:
+    student_results.is_published = FALSE  →  hidden from student
+    examinations.status = 'published'
+    + admin action                        →  flip is_published = TRUE for all
+                                             results of that examination
+
+
+================================================================================
+7. INDEXES & PERFORMANCE
+================================================================================
+
+  -- Student lookups
+  CREATE INDEX idx_students_email        ON students(email);
+  CREATE INDEX idx_students_department   ON students(department_id);
+  CREATE INDEX idx_students_program      ON students(program_id);
+  CREATE INDEX idx_students_batch        ON students(batch);
+
+  -- Course enrollment
+  CREATE INDEX idx_enrollments_student   ON course_enrollments(student_id);
+  CREATE INDEX idx_enrollments_course    ON course_enrollments(course_id);
+
+  -- Faculty-course assignment
+  CREATE INDEX idx_faccourses_faculty    ON faculty_courses(faculty_id);
+  CREATE INDEX idx_faccourses_course     ON faculty_courses(course_id);
+
+  -- Question bank — most common filter: by course + type + difficulty
+  CREATE INDEX idx_questions_course      ON questions(course_id);
+  CREATE INDEX idx_questions_course_type ON questions(course_id, type, difficulty);
+
+  -- Results — student portal query
+  CREATE INDEX idx_results_paper         ON student_results(paper_id);
+  CREATE INDEX idx_results_student       ON student_results(student_id);
+  CREATE INDEX idx_results_published     ON student_results(student_id, is_published);
+
+  -- Marksheet verification
+  CREATE UNIQUE INDEX idx_marksheets_code ON marksheets(verification_code);
+  CREATE INDEX idx_marksheets_student     ON marksheets(student_id);
+
+  -- Announcements — per-course feed
+  CREATE INDEX idx_announcements_course  ON lms_announcements(course_id, created_at DESC);
+
+  -- Exam paper → examination link
+  CREATE INDEX idx_papers_examination    ON exam_papers(examination_id);
+
+
+================================================================================
+8. SEED / DEFAULT DATA
+================================================================================
+
+  USERS (admin and faculty logins):
+    admin@itmuniversity.ac.in    / admin123   → role: admin
+    faculty@itmuniversity.ac.in  / faculty123 → role: faculty (Dr. Amit Kumar)
+
+  STUDENTS (login = email + student ID as password):
+    aditya.s@itmuniversity.ac.in / ITM2024001  → B.Tech CSE, Batch 2024-2028
+    priya.s@itmuniversity.ac.in  / ITM2024002  → BBA, Batch 2024-2027
+    rahul.g@itmuniversity.ac.in  / ITM2024003  → B.Tech CSE, Batch 2024-2028
+
+  DEPARTMENTS: CSE, MGT, ECE, ME, SCI, LAW
+  COURSES: CSE301 (DSA, 4cr), CSE402 (ML, 3cr), MGT201 (Biz Strategy, 3cr)
+
+  IMPORTANT: Passwords in the seed data are plaintext for demo only.
+  In production, all passwords MUST be stored as bcrypt hashes.
+
+
+================================================================================
+9. FEATURE-TO-TABLE MAPPING
+================================================================================
+
+  FEATURE                            TABLES INVOLVED
+  ─────────────────────────────────  ──────────────────────────────────────────
+  Student login                      students (email + id as password)
+  Admin/Faculty login                users
+  Student profile (locked fields)    students (admin edits only)
+  Student profile (personal fields)  students (student edits)
+  Profile change request             profile_change_requests
+  Student list (admin view)          students, departments, programs
+  Course enrollment                  course_enrollments, courses, students
+  Faculty course assignment          faculty_courses, faculty, courses
+  Admin: courses by faculty          faculty_courses JOIN faculty JOIN courses
+  Question bank                      questions, courses
+  Paper generation                   exam_papers, exam_questions, questions
+  Bloom's / CO-PO mapping            questions.co, questions.po, questions.blooms
+  Bulk AI evaluation                 eval_sessions, student_results,
+                                     question_responses
+  Examination hierarchy              examinations, exam_papers, student_results
+  Result publishing (admin only)     examinations.status, student_results.is_published
+  Marksheet generation (admin only)  marksheets, marksheet_subjects
+  Marksheet verification (public)    marksheets (by verification_code)
+  Student grades in My Portal        student_results (is_published=TRUE)
+  LMS resources per course           lms_resources, courses
+  LMS announcements                  lms_announcements (audience filter)
+  Admin broadcast announcement       lms_announcements (course_id=NULL)
+  Notifications                      notifications
+  NBA/NAAC CO-PO attainment          questions, question_responses (aggregate)
+
+
+================================================================================
+10. KNOWN ISSUES IN CURRENT IMPLEMENTATION
+================================================================================
+
+  1. PLAINTEXT PASSWORDS
+     users and students tables store passwords as plaintext in the JSON file.
+     MUST be replaced with bcrypt hashes before any production use.
+
+  2. NO COURSE ENROLLMENT TABLE
+     The current schema has an 'enrolled' count on the courses table but no
+     actual enrollment records. Students cannot be linked to specific courses.
+     Add course_enrollments table and wire up "My Courses" for students.
+
+  3. NO FACULTY-COURSE ASSIGNMENT
+     Admin cannot currently see which courses a faculty member teaches.
+     Add faculty_courses table.
+
+  4. EXAMINATION HIERARCHY NOT IMPLEMENTED
+     exam_papers have no examination_id yet. The examinations table and the
+     parent-child structure are defined here but not yet in pgdb.js or db.js.
+     student_results.is_published does not exist yet.
+
+  5. MARKSHEET COVERS ONLY ONE SUBJECT
+     The current marksheets table links to one result_id (one subject).
+     marksheet_subjects (Section 4.18) must be added to support
+     multi-subject marksheets per examination.
+
+  6. PASS/FAIL BUG IN MARKSHEET
+     Current code uses: data.grade >= 'C' (lexicographic string comparison).
+     This incorrectly marks grade 'F' as PASS since 'F' > 'C' alphabetically.
+     Fix: use numeric percentage threshold (percentage >= 40) or an explicit
+     lookup: ['O','A+','A','B+','B','C'].includes(grade).
+
+  7. STUDENT_RESULTS HAS NO STUDENT_ID FK
+     student_results stores student_name and roll_no as text strings only.
+     Add student_id VARCHAR(36) REFERENCES students(id) for proper joins.
+
+  8. EVAL_SESSIONS NOT IN POSTGRESQL
+     eval_sessions only exists in the JSON flat file.
+     Should be migrated to PostgreSQL for proper session tracking.
+
+  9. JSON FILE NOT SUITABLE FOR PRODUCTION
+     The flat JSON file (itm_lms_db.json) has no concurrency control,
+     no transactions, no referential integrity, and no indexing.
+     It is only acceptable as a local development fallback.
+
+  10. NO AUDIT LOG
+      There is no record of who changed what and when.
+      Add a generic audit_log table for compliance (NBA/NAAC requirement).
+
+
+================================================================================
+11. MIGRATION ROADMAP (JSON → Full PostgreSQL)
+================================================================================
+
+  PHASE 1 — Foundation (immediate)
+  ----------------------------------
+  a) Hash all passwords with bcrypt before writing to DB.
+  b) Create all missing tables in pgdb.js SCHEMA string:
+       programs, faculty_courses, course_enrollments,
+       examinations, eval_sessions (move from JSON), notifications,
+       profile_change_requests, marksheet_subjects.
+  c) Add examination_id to exam_papers.
+  d) Add student_id to student_results.
+  e) Add is_published to student_results.
+
+  PHASE 2 — Route updates
+  ------------------------
+  a) Update /api/auth to use bcrypt.compare().
+  b) Update /api/students PUT to only allow locked-field changes via
+     profile_change_requests (not direct update).
+  c) Add /api/examinations routes (CRUD + publish action).
+  d) Add /api/courses/:id/enroll (student enrollment endpoint).
+  e) Add /api/faculty/:id/courses (faculty course assignment).
+  f) Update student_results insert to set student_id FK.
+  g) Update marksheet generation to create marksheet_subjects rows.
+
+  PHASE 3 — Student Portal wiring
+  ---------------------------------
+  a) Student grades query:
+       SELECT sr.* FROM student_results sr
+       JOIN exam_papers ep ON sr.paper_id = ep.id
+       JOIN examinations e  ON ep.examination_id = e.id
+       WHERE sr.student_id = $1
+         AND sr.is_published = TRUE
+       ORDER BY e.created_at DESC;
+  b) Publish results (admin action):
+       UPDATE examinations SET status='published', published_at=NOW()
+         WHERE id = $1;
+       UPDATE student_results SET is_published=TRUE
+         WHERE paper_id IN (
+           SELECT id FROM exam_papers WHERE examination_id = $1
+         );
+
+  PHASE 4 — Integrity & Performance
+  -----------------------------------
+  a) Add all indexes from Section 7.
+  b) Add CHECK constraints and NOT NULL where missing.
+  c) Add updated_at triggers (or handle in application layer).
+  d) Add audit_log table.
+  e) Enable pg_trgm for full-text search on student names.
+
+  PHASE 5 — NBA/NAAC Compliance
+  --------------------------------
+  a) CO-PO attainment report:
+       Aggregate question_responses.marks_awarded GROUP BY questions.co/po
+       to compute attainment levels per course outcome.
+  b) Export APIs for NBA Self-Study Report data (student count by program,
+     faculty qualifications, placement statistics).
+
+
+================================================================================
+  END OF DOCUMENT
+  ITM University LMS — Database Design v1.0
+================================================================================
