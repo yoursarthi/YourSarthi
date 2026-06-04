@@ -22,6 +22,7 @@ import AITutor from './views/AITutor';
 import ResultManagement from './views/ResultManagement';
 import MarksheetBuilder from './views/MarksheetBuilder';
 import OBEAnalytics from './views/OBEAnalytics';
+import WellBot from './views/WellBot';
 
 const PAGE_TITLES = {
   dashboard:        'Dashboard',
@@ -43,6 +44,7 @@ const PAGE_TITLES = {
   results:          'Result Management',
   marksheets:       'Marksheet Builder',
   obe:              'OBE Analytics',
+  wellbot:          'Well-Bot AI',
 };
 
 const PAGE_SUBTITLES = {
@@ -65,13 +67,14 @@ const PAGE_SUBTITLES = {
   moderation:       'Your assigned papers',
   feedback:         'Submit feedback, complaints & suggestions',
   ai_tutor:         'Course-specific AI powered by Ollama + Qwen2.5',
+  wellbot:          'AI Mental Wellness Assistant · Coming Soon',
 };
 
 const ALLOWED_PAGES = {
-  admin:     ['dashboard','students','faculty','courses','qb','syllabus','evaluation','lms','counselling','data','notifications','moderation_admin','feedback','ai_tutor','results','marksheets','obe'],
-  moderator: ['dashboard','moderation','notifications','feedback'],
-  faculty:   ['dashboard','courses','syllabus','evaluation','lms','notifications','feedback','ai_tutor','results','obe'],
-  student:   ['dashboard','courses','student_portal','lms','counselling','notifications','feedback','ai_tutor','results'],
+  admin:     ['dashboard','students','faculty','courses','qb','syllabus','evaluation','lms','counselling','data','notifications','moderation_admin','feedback','ai_tutor','results','marksheets','obe','wellbot'],
+  moderator: ['dashboard','moderation','notifications','feedback','wellbot'],
+  faculty:   ['dashboard','courses','syllabus','evaluation','lms','notifications','feedback','ai_tutor','results','obe','wellbot'],
+  student:   ['dashboard','courses','student_portal','lms','counselling','notifications','feedback','ai_tutor','results','wellbot'],
 };
 
 function Main() {
@@ -140,6 +143,7 @@ function Main() {
       case 'results':          return <ResultManagement user={user} />;
       case 'marksheets':       return role === 'admin' ? <MarksheetBuilder user={user} /> : <Dashboard user={user} onNavigate={navigate} />;
       case 'obe':              return <OBEAnalytics user={user} />;
+      case 'wellbot':          return <WellBot />;
       default: return <Dashboard user={user} onNavigate={navigate} />;
     }
   };

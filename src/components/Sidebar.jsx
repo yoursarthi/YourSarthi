@@ -23,6 +23,7 @@ const ADMIN_NAV = {
     { icon: 'ri-database-2-line',     label: 'Data Management',  page: 'data' },
     { icon: 'ri-chat-3-line',         label: 'Feedback Board',   page: 'feedback' },
     { icon: 'ri-notification-3-line', label: 'Notifications',    page: 'notifications' },
+    { icon: 'ri-mental-health-line',  label: 'Well-Bot AI',      page: 'wellbot' },
   ],
 };
 
@@ -31,6 +32,7 @@ const MODERATOR_NAV = {
     { icon: 'ri-dashboard-line',      label: 'Dashboard',        page: 'dashboard' },
     { icon: 'ri-file-edit-line',      label: 'My Assignments',   page: 'moderation' },
     { icon: 'ri-notification-3-line', label: 'Notifications',    page: 'notifications' },
+    { icon: 'ri-mental-health-line',  label: 'Well-Bot AI',      page: 'wellbot' },
   ],
 };
 
@@ -48,6 +50,7 @@ const FACULTY_NAV = {
     { icon: 'ri-graduation-cap-line', label: 'Sarthi LMS',        page: 'lms' },
     { icon: 'ri-chat-3-line',         label: 'Feedback Board',   page: 'feedback' },
     { icon: 'ri-notification-3-line', label: 'Notifications',    page: 'notifications' },
+    { icon: 'ri-mental-health-line',  label: 'Well-Bot AI',      page: 'wellbot' },
   ],
 };
 
@@ -64,6 +67,7 @@ const STUDENT_NAV = {
     { icon: 'ri-robot-line',          label: 'Career Counsellor',  page: 'counselling' },
     { icon: 'ri-chat-3-line',         label: 'Feedback Board',     page: 'feedback' },
     { icon: 'ri-notification-3-line', label: 'Notifications',      page: 'notifications' },
+    { icon: 'ri-mental-health-line',  label: 'Well-Bot AI',        page: 'wellbot' },
   ],
 };
 
