@@ -354,6 +354,14 @@ io.on('connection', (socket) => {
   });
 });
 
+// ─── Serve React frontend (production build) ─────────────────────────────────
+const path = require('path');
+const distPath = path.join(__dirname, '../dist');
+app.use(express.static(distPath));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
+});
+
 // ─── Central error handler (must be last middleware) ─────────────────────────
 app.use(errorHandler);
 
