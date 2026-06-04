@@ -6,6 +6,14 @@ node_modules/
 .env.*
 !.env.example
 
+# ── SSL / certificates ───────────────────────────────────────
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+
 # ── Build output ────────────────────────────────────────────
 dist/
 build/
@@ -13,8 +21,9 @@ build/
 # ── Vite cache ──────────────────────────────────────────────
 .vite/
 
-# ── Uploads (runtime, not source) ───────────────────────────
-server/uploads/
+# ── Uploads (runtime files, not source) ─────────────────────
+server/uploads/**
+!server/uploads/.gitkeep
 
 # ── JSON file-store fallback (contains student/grade data) ──
 server/itm_lms_db.json
@@ -22,10 +31,25 @@ server/*.json
 
 # ── Logs ────────────────────────────────────────────────────
 logs/
+server/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# ── Runtime / process files ─────────────────────────────────
+*.pid
+*.seed
+pids/
+
+# ── Local databases ─────────────────────────────────────────
+*.sqlite
+*.sqlite3
+*.db
+
+# ── Test coverage ───────────────────────────────────────────
+coverage/
+.nyc_output/
 
 # ── OS / Editor ─────────────────────────────────────────────
 .DS_Store
