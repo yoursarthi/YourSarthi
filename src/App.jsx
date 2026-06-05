@@ -23,6 +23,8 @@ import ResultManagement from './views/ResultManagement';
 import MarksheetBuilder from './views/MarksheetBuilder';
 import OBEAnalytics from './views/OBEAnalytics';
 import WellBot from './views/WellBot';
+import OnlineCourses from './views/OnlineCourses';
+import IKSPlugin from './views/IKSPlugin';
 
 const PAGE_TITLES = {
   dashboard:        'Dashboard',
@@ -45,6 +47,8 @@ const PAGE_TITLES = {
   marksheets:       'Marksheet Builder',
   obe:              'OBE Analytics',
   wellbot:          'Well-Bot AI',
+  online_courses:   'Online Courses',
+  iks_plugin:       'IKS Synergy Engine',
 };
 
 const PAGE_SUBTITLES = {
@@ -68,13 +72,15 @@ const PAGE_SUBTITLES = {
   feedback:         'Submit feedback, complaints & suggestions',
   ai_tutor:         'Course-specific AI powered by Ollama + Qwen2.5',
   wellbot:          'AI Mental Wellness Assistant · Coming Soon',
+  online_courses:   'Self-paced certificate courses · Learn at your own pace',
+  iks_plugin:       'Saraswati · NEP 2020 IKS Research Initiative',
 };
 
 const ALLOWED_PAGES = {
-  admin:     ['dashboard','students','faculty','courses','qb','syllabus','evaluation','lms','counselling','data','notifications','moderation_admin','feedback','ai_tutor','results','marksheets','obe','wellbot'],
-  moderator: ['dashboard','moderation','notifications','feedback','wellbot'],
-  faculty:   ['dashboard','courses','syllabus','evaluation','lms','notifications','feedback','ai_tutor','results','obe','wellbot'],
-  student:   ['dashboard','courses','student_portal','lms','counselling','notifications','feedback','ai_tutor','results','wellbot'],
+  admin:     ['dashboard','students','faculty','courses','qb','syllabus','evaluation','lms','counselling','data','notifications','moderation_admin','feedback','ai_tutor','results','marksheets','obe','wellbot','online_courses','iks_plugin'],
+  moderator: ['dashboard','moderation','notifications','feedback','wellbot','online_courses'],
+  faculty:   ['dashboard','courses','syllabus','evaluation','lms','notifications','feedback','ai_tutor','results','obe','wellbot','online_courses','iks_plugin'],
+  student:   ['dashboard','courses','student_portal','lms','counselling','notifications','feedback','ai_tutor','results','wellbot','online_courses'],
 };
 
 function Main() {
@@ -144,6 +150,8 @@ function Main() {
       case 'marksheets':       return role === 'admin' ? <MarksheetBuilder user={user} /> : <Dashboard user={user} onNavigate={navigate} />;
       case 'obe':              return <OBEAnalytics user={user} />;
       case 'wellbot':          return <WellBot />;
+      case 'online_courses':   return <OnlineCourses user={user} />;
+      case 'iks_plugin':       return <IKSPlugin />;
       default: return <Dashboard user={user} onNavigate={navigate} />;
     }
   };

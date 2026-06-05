@@ -4,6 +4,7 @@ const ADMIN_NAV = {
     { icon: 'ri-user-line',           label: 'Students',         page: 'students' },
     { icon: 'ri-team-line',           label: 'Faculty',          page: 'faculty' },
     { icon: 'ri-book-open-line',      label: 'Courses',          page: 'courses' },
+    { icon: 'ri-play-circle-line',    label: 'Online Courses',   page: 'online_courses' },
   ],
   TOOLS: [
     { icon: 'ri-file-text-line',      label: 'Question Bank',    page: 'qb' },
@@ -11,6 +12,8 @@ const ADMIN_NAV = {
     { icon: 'ri-pencil-ruler-line',   label: 'AI Evaluation',    page: 'evaluation' },
     { icon: 'ri-robot-2-line',        label: 'AI Tutor',         page: 'ai_tutor' },
     { icon: 'ri-shield-check-line',   label: 'Moderation',       page: 'moderation_admin' },
+    { icon: 'ri-mental-health-line',  label: 'Well-Bot AI',      page: 'wellbot' },
+    { icon: 'ri-ancient-gate-line',   label: 'IKS Plugin',       page: 'iks_plugin' },
   ],
   RESULTS: [
     { icon: 'ri-bar-chart-box-line',  label: 'Result Management',page: 'results' },
@@ -23,7 +26,6 @@ const ADMIN_NAV = {
     { icon: 'ri-database-2-line',     label: 'Data Management',  page: 'data' },
     { icon: 'ri-chat-3-line',         label: 'Feedback Board',   page: 'feedback' },
     { icon: 'ri-notification-3-line', label: 'Notifications',    page: 'notifications' },
-    { icon: 'ri-mental-health-line',  label: 'Well-Bot AI',      page: 'wellbot' },
   ],
 };
 
@@ -31,6 +33,7 @@ const MODERATOR_NAV = {
   PORTAL: [
     { icon: 'ri-dashboard-line',      label: 'Dashboard',        page: 'dashboard' },
     { icon: 'ri-file-edit-line',      label: 'My Assignments',   page: 'moderation' },
+    { icon: 'ri-play-circle-line',    label: 'Online Courses',   page: 'online_courses' },
     { icon: 'ri-notification-3-line', label: 'Notifications',    page: 'notifications' },
     { icon: 'ri-mental-health-line',  label: 'Well-Bot AI',      page: 'wellbot' },
   ],
@@ -45,12 +48,16 @@ const FACULTY_NAV = {
     { icon: 'ri-robot-2-line',        label: 'AI Tutor',         page: 'ai_tutor' },
     { icon: 'ri-bar-chart-box-line',  label: 'Result Management',page: 'results' },
     { icon: 'ri-award-line',          label: 'OBE Analytics',    page: 'obe' },
+    { icon: 'ri-play-circle-line',    label: 'Online Courses',   page: 'online_courses' },
+  ],
+  TOOLS: [
+    { icon: 'ri-mental-health-line',  label: 'Well-Bot AI',      page: 'wellbot' },
+    { icon: 'ri-ancient-gate-line',   label: 'IKS Plugin',       page: 'iks_plugin' },
   ],
   SYSTEM: [
     { icon: 'ri-graduation-cap-line', label: 'Sarthi LMS',        page: 'lms' },
     { icon: 'ri-chat-3-line',         label: 'Feedback Board',   page: 'feedback' },
     { icon: 'ri-notification-3-line', label: 'Notifications',    page: 'notifications' },
-    { icon: 'ri-mental-health-line',  label: 'Well-Bot AI',      page: 'wellbot' },
   ],
 };
 
@@ -60,6 +67,7 @@ const STUDENT_NAV = {
     { icon: 'ri-book-open-line',      label: 'My Courses',         page: 'courses' },
     { icon: 'ri-account-circle-line', label: 'My Portal',          page: 'student_portal' },
     { icon: 'ri-graduation-cap-line', label: 'Sarthi LMS',          page: 'lms' },
+    { icon: 'ri-play-circle-line',    label: 'Online Courses',     page: 'online_courses' },
     { icon: 'ri-bar-chart-box-line',  label: 'My Results',         page: 'results' },
   ],
   TOOLS: [
